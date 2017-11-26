@@ -1,6 +1,6 @@
 
 import {store} from './store.js'
-import GdbApi from './GdbApi.js'
+import GdbApi from './GdbApi.jsx'
 import constants from './constants.js'
 import Actions from './Actions.js'
 import React from 'react';  // needed for jsx
@@ -78,9 +78,11 @@ const FileOps = {
         , end_line = Math.ceil(start_line + store.get('max_lines_of_code_to_fetch'))
         , source_file_obj = FileOps.get_source_file_obj_from_cache(fullname)
         if(source_file_obj){
-            end_line = Math.min(end_line, FileOps.get_num_lines_in_file(fullname) - 1) // don't go past the end of the line TODO figure out off-by-one here
+            end_line = Math.min(end_line, FileOps.get_num_lines_in_file(fullname)) // don't go past the end of the line
         }
-
+        if(start_line > end_line){
+            start_line = Math.max(1, end_line - store.get('max_lines_of_code_to_fetch'))
+        }
         paused_on_line = Math.min(paused_on_line, end_line)
 
 
@@ -163,6 +165,13 @@ const FileOps = {
             source_file_obj = FileOps.get_source_file_obj_from_cache(fullname)
         }
         return source_file_obj && source_file_obj.source_code_obj && source_file_obj.source_code_obj[linenum] !== undefined
+    },
+    get_line_from_file: function(fullname, linenum){
+        let source_file_obj = FileOps.get_source_file_obj_from_cache(fullname)
+        if(!source_file_obj){
+            return null
+        }
+        return source_file_obj.source_code_obj[linenum]
     },
     assembly_is_cached: function(fullname){
         let source_file_obj = FileOps.get_source_file_obj_from_cache(fullname)

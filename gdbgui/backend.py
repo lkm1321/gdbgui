@@ -384,6 +384,8 @@ def read_file():
     start_line = int(request.args.get('start_line'))
     end_line = int(request.args.get('end_line'))
 
+    start_line = max(1, start_line)  # make sure it's not negative
+
     try:
         highlight = json.loads(request.args.get('highlight', 'true'))
     except Exception as e:
@@ -399,8 +401,14 @@ def read_file():
             with open(path, 'r') as f:
                 raw_source_code_list = f.read().split('\n')
                 num_lines_in_file = len(raw_source_code_list)
-                raw_source_code_lines_of_interest = raw_source_code_list[(start_line - 1):(end_line)]
+                end_line = min(num_lines_in_file, end_line)  # make sure we don't try to go too far
 
+                # if leading lines are '', then the lexer will strip them out, but we want
+                # to preserve blank lines. Insert a space whenever we find a blank line.
+                for i in range((start_line - 1), (end_line)):
+                    if raw_source_code_list[i] == '':
+                        raw_source_code_list[i] = ' '
+                raw_source_code_lines_of_interest = raw_source_code_list[(start_line - 1):(end_line)]
             try:
                 lexer = get_lexer_for_filename(path)
             except Exception:
@@ -411,7 +419,7 @@ def read_file():
                 # convert string into tokens
                 tokens = lexer.get_tokens('\n'.join(raw_source_code_lines_of_interest))
                 # format tokens into nice, marked up list of html
-                formatter = htmllistformatter.HtmlListFormatter(lineseparator='')  # Don't add newlines after each line
+                formatter = htmllistformatter.HtmlListFormatter()  # Don't add newlines after each line
                 source_code = formatter.get_marked_up_list(tokens)
             else:
                 highlighted = False

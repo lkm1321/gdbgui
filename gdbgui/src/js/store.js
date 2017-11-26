@@ -248,7 +248,7 @@ const initial_store_data = {
     themes: initial_data.themes,
     current_theme: localStorage.getItem('theme') || initial_data.themes[0],
     highlight_source_code: true,  // get saved boolean to highlight source code
-    max_lines_of_code_to_fetch: 500,
+    max_lines_of_code_to_fetch: constants.default_max_lines_of_code_to_fetch,
     auto_add_breakpoint_to_main: true,
 
     pretty_print: true,  // whether gdb should "pretty print" variables. There is an option for this in Settings

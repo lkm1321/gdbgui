@@ -207,7 +207,7 @@ class SourceCode extends React.Component {
         , asterisk = on_current_instruction ? <span className='glyphicon glyphicon-chevron-right' style={{width: '10px', display: 'inline-block'}}/> : <span style={{width: '10px', display: 'inline-block'}}> </span>
         return(<span key={key} style={{'whiteSpace': "nowrap"}} className={cls}>
                     {asterisk} <MemoryLink addr={addr} style={{paddingRight: '5px'}}/>
-                    {op}
+                    {op /* i.e. mov */}
                     <span className='instrContent'>{instruction}</span>
                     {func_name ? <span>{func_name}+{offset}</span> : ''}
                 </span>)
@@ -233,12 +233,20 @@ class SourceCode extends React.Component {
     }
     get_view_more_tr(fullname, linenum){
         return <tr key={linenum} className='srccode'>
-                    {this.get_linenum_td(linenum)}
+                    <td></td>
                     <td onClick={()=>{Actions.view_file(fullname, linenum)}}
-                        style={{fontStyle: 'italic'}}
+                        style={{fontStyle: 'italic', paddingLeft: '10px'}}
                         className='pointer'
                     >
                         view more
+                    </td>
+                </tr>
+    }
+    get_end_of_file_tr(linenum){
+        return <tr key={linenum}>
+                    <td></td>
+                    <td style={{fontStyle: 'italic', paddingLeft: '10px', fontSize: '0.8em'}}>
+                        (end of file)
                     </td>
                 </tr>
     }
@@ -258,6 +266,7 @@ class SourceCode extends React.Component {
         }
 
         // go forwards from center until missing element is found
+        linenum = line_to_flash
         while(linenum <= end_linenum && (end_linenum - linenum) <= this.state.max_lines_of_code_to_fetch){
             if(source_code_obj.hasOwnProperty(linenum)){
                 end_linenum_to_render = linenum
@@ -311,6 +320,10 @@ class SourceCode extends React.Component {
             body.push(this.get_view_more_tr(fullname, end_linenum_to_render + 1))
         }else if(end_linenum < num_lines_in_file){
             body.push(this.get_view_more_tr(fullname, line_num_being_rendered))
+        }
+
+        if(end_linenum_to_render === num_lines_in_file){
+            body.push(this.get_end_of_file_tr(num_lines_in_file + 1))
         }
         return body
     }
