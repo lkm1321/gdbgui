@@ -1,16 +1,8 @@
 #!/usr/bin/env python
 
 """
-A Flask server that manages a gdb subprocess, and
-returns structured gdb output to the client
-
-Examples:
-
-gdbgui
-gdbgui "/path/to/program"
-gdbgui "/path/to/program -arg myarg -myflag"
-gdbgui --help
-
+A server that provides a graphical user interface to the gnu debugger (gdb).
+https://github.com/cs01/gdbgui
 """
 
 import os
@@ -32,12 +24,21 @@ from functools import wraps
 from flask_socketio import SocketIO, emit
 from flask_compress import Compress
 from pygdbmi.gdbcontroller import GdbController
-BASE_PATH = os.path.dirname(os.path.realpath(__file__))
-PARENTDIR = os.path.dirname(BASE_PATH)
-sys.path.append(PARENTDIR)
+
+pyinstaller_env_var_base_dir = '_MEIPASS'
+pyinstaller_base_dir = getattr(sys, '_MEIPASS', None)
+using_pyinstaller = pyinstaller_base_dir is not None
+if using_pyinstaller:
+    BASE_PATH = pyinstaller_base_dir
+else:
+    BASE_PATH = os.path.dirname(os.path.realpath(__file__))
+    PARENTDIR = os.path.dirname(BASE_PATH)
+    sys.path.append(PARENTDIR)
+
 from gdbgui import htmllistformatter  # noqa
 from gdbgui import __version__  # noqa
 
+USING_WINDOWS = os.name == 'nt'
 TEMPLATE_DIR = os.path.join(BASE_PATH, 'templates')
 STATIC_DIR = os.path.join(BASE_PATH, 'static')
 DEFAULT_HOST = '127.0.0.1'
@@ -48,25 +49,22 @@ DEFAULT_GDB_ARGS = ['-nx', '--interpreter=mi2']
 DEFAULT_LLDB_ARGS = ['--interpreter=mi2']
 
 STARTUP_WITH_SHELL_OFF = False
-match = re.match('darwin-(\d+)\..*', platform.platform().lower())
-if match is not None and int(match.groups()[0]) >= 16:
+darwin_match = re.match('darwin-(\d+)\..*', platform.platform().lower())
+if darwin_match is not None and int(darwin_match.groups()[0]) >= 16:
     # if mac OS version is 16 (sierra) or higher, need to set shell off due to
     # os's security requirements
     STARTUP_WITH_SHELL_OFF = True
 
-
 # create dictionary of signal names
-SIGNAL_NAME_TO_NUM = {}
+SIGNAL_NAME_TO_OBJ = {}
 for n in dir(signal):
     if n.startswith('SIG') and '_' not in n:
-        SIGNAL_NAME_TO_NUM[n.upper()] = getattr(signal, n)
+        SIGNAL_NAME_TO_OBJ[n.upper()] = getattr(signal, n)
 
 # Create flask application and add some configuration keys to be used in various callbacks
 app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder=STATIC_DIR)
 Compress(app)  # add gzip compression to Flask. see https://github.com/libwilliam/flask-compress
 
-# templates are written in pug, so add that capability to flask
-app.jinja_env.add_extension('pypugjs.ext.jinja.PyPugJSExtension')
 app.config['initial_binary_and_args'] = []
 app.config['gdb_path'] = DEFAULT_GDB_EXECUTABLE
 app.config['gdb_cmd_file'] = None
@@ -93,15 +91,11 @@ def setup_backend(serve=True, host=DEFAULT_HOST, port=DEFAULT_PORT, debug=False,
     url_with_prefix = 'http://' + url
 
     if debug:
-        # gevent works on linux kernels < v3.9, eventlet does not, so gevent is preferred.
-        # However, in debug mode gevent monkey patches (removes) python modules used by pygdbmi,
-        # so it cannot be used if debug is on
-        # https://github.com/miguelgrinberg/Flask-SocketIO/issues/413 is resolved
         async_mode = 'eventlet'
     else:
-
         async_mode = 'gevent'
     socketio.server_options['async_mode'] = async_mode
+
     try:
         socketio.init_app(app)
     except Exception:
@@ -136,7 +130,11 @@ def setup_backend(serve=True, host=DEFAULT_HOST, port=DEFAULT_PORT, debug=False,
 
 def verify_gdb_exists():
     if find_executable(app.config['gdb_path']) is None:
-        pygdbmi.printcolor.print_red('gdb executable "%s" was not found. Is gdb installed? try "sudo apt-get install gdb"' % app.config['gdb_path'])
+        pygdbmi.printcolor.print_red('gdb executable "%s" was not found. Verify the executable exists, or that it is a directory on your $PATH environment variable.' % app.config['gdb_path'])
+        if USING_WINDOWS:
+            print('Install gdb (package name "mingw32-gdb") using MinGW (https://sourceforge.net/projects/mingw/files/Installer/mingw-get-setup.exe/download), then ensure gdb is on your "Path" environement variable: Control Panel > System Properties > Environment Variables > System Variables > Path')
+        else:
+            print('try "sudo apt-get install gdb" for Linux or "brew install gdb"')
         sys.exit(1)
     elif 'lldb' in app.config['gdb_path'].lower() and 'lldb-mi' not in app.config['gdb_path'].lower():
         pygdbmi.printcolor.print_red('gdbgui cannot use the standard lldb executable. You must use an executable with "lldb-mi" in its name.')
@@ -145,14 +143,15 @@ def verify_gdb_exists():
 
 def dbprint(*args):
     """print only if app.debug is truthy"""
-    
+
     CYELLOW2 = '\33[93m'
     NORMAL = '\033[0m'
     print(CYELLOW2 + 'DEBUG: ' + ' '.join(args) + NORMAL)
 
 
+
 def colorize(text):
-    if IS_A_TTY:
+    if IS_A_TTY and not USING_WINDOWS:
         return '\033[1;32m' + text + '\x1b[0m'
     else:
         return text
@@ -355,38 +354,51 @@ def gdbgui():
             'initial_binary_and_args': app.config['initial_binary_and_args'],
             'show_gdbgui_upgrades': app.config['show_gdbgui_upgrades'],
             'themes': THEMES,
-            'signals': SIGNAL_NAME_TO_NUM,
+            'signals': SIGNAL_NAME_TO_OBJ,
             'pid': app.config['pid']
         }
 
-    return render_template('gdbgui.pug',
+    return render_template('gdbgui.html',
         version=__version__,
-        debug=json.dumps(app.debug),
+        debug=app.debug,
         interpreter=interpreter,
-        initial_data=json.dumps(initial_data),
+        initial_data=initial_data,
         themes=THEMES)
 
 
 @app.route('/send_signal_to_pid')
 def send_signal_to_pid():
     signal_name = request.args.get('signal_name', '')
-    signal_num = SIGNAL_NAME_TO_NUM.get(signal_name.upper())
+    signal_obj = SIGNAL_NAME_TO_OBJ.get(signal_name.upper())
     if signal is None:
         raise ValueError('no such signal %s' % signal_name)
 
-    pid = int(request.args.get('pid'))
-    os.kill(pid, signal_num)
-    return jsonify({'message': 'sent signal %s (%s) to process id %s' % (signal_name, signal_num, str(pid))})
+    pid_str = str(request.args.get('pid'))
+    try:
+        pid_int = int(pid_str)
+    except ValueError:
+        return jsonify({'message': 'The pid %s cannot be converted to an integer. Signal %s was not sent.' % (pid_str, signal_name)}), 400
+
+    os.kill(pid_int, signal_obj)
+    return jsonify({'message': 'sent signal %s (%s) to process id %s' % (signal_name, signal_obj.value, pid_str)})
+
+
+@app.route('/dashboard')
+def dashboard():
+    """display a dashboard with a list of all running gdb processes
+    and ability to kill them, or open a new tab to work with that
+    GdbController instance"""
+    return render_template('dashboard.html')
 
 
 @app.route('/shutdown')
 def shutdown_webview():
-    return render_template('donate.pug', debug=json.dumps(app.debug))
+    return render_template('donate.html', debug=app.debug)
 
 
 @app.route('/donate')
 def donate():
-    return render_template('donate.pug')
+    return render_template('donate.html')
 
 
 @app.route('/help')
@@ -529,6 +541,7 @@ def main():
                         'to gdbgui and is useful when running on a remote machine that you want to view/debug from your local '
                         'browser, or let someone else debug your application remotely.', action='store_true', )
     parser.add_argument('-g', '--gdb', help='Path to gdb or lldb executable. Defaults to %s. lldb support is experimental.' % DEFAULT_GDB_EXECUTABLE, default=DEFAULT_GDB_EXECUTABLE)
+    parser.add_argument('--rr', action='store_true', help='Use `rr replay` instead of gdb. Replays last recording by default. Replay arbitrary recording by passing recorded directory as an argument. i.e. gdbgui /recorded/dir --rr. See http://rr-project.org/.')
     parser.add_argument('--lldb', help='Use lldb commands (experimental)', action='store_true')
     parser.add_argument('-v', '--version', help='Print version', action='store_true')
     parser.add_argument('--hide_gdbgui_upgrades', help='Hide messages regarding newer version of gdbgui. Defaults to False.', action='store_true')
@@ -544,6 +557,16 @@ def main():
         'Specify a file that contains the HTTP Basic auth username and password separate by newline. '
         'NOTE: gdbgui does not use https.')
     parser.add_argument('--pid', help='PID to attach to')
+
+    parser.add_argument('--key', default=None, help='SSL private key. '
+        'Generate with:'
+        'openssl req -newkey rsa:2048 -nodes -keyout host.key -x509 -days 365 -out host.cert')
+    # https://www.digitalocean.com/community/tutorials/openssl-essentials-working-with-ssl-certificates-private-keys-and-csrs
+
+    parser.add_argument('--cert', default=None, help='SSL certificate. '
+        'Generate with:'
+        'openssl req -newkey rsa:2048 -nodes -keyout host.key -x509 -days 365 -out host.cert')
+    # https://www.digitalocean.com/community/tutorials/openssl-essentials-working-with-ssl-certificates-private-keys-and-csrs
 
     args = parser.parse_args()
 
@@ -572,6 +595,13 @@ def main():
         args.no_browser = True
         if app.config['gdbgui_auth_user_credentials'] is None:
             print('Warning: authentication is recommended when serving on a publicly accessible IP address. See gdbgui --help.')
+
+    if args.rr is True:
+        print('The rr flag can only be used in the pro version of gdbgui. Upgrade now at http://gdbgui.com.')
+        exit(1)
+    elif args.key or args.cert:
+        print('Secure connection with SSL is only available in the pro version of gdbgui. Upgrade now at http://gdbgui.com.')
+        exit(1)
 
     setup_backend(serve=True,
         host=args.host,

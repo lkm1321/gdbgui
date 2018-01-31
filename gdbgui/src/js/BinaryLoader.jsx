@@ -1,5 +1,4 @@
 import React from 'react';
-import {store} from './store.js';
 import constants from './constants.js';
 import Actions from './Actions.js';
 import Util from './Util.js';
@@ -15,9 +14,8 @@ class BinaryLoader extends React.Component {
         this.state = {
             past_binaries: [],
             user_input: props.initial_user_input,
-            set_target_app: props.initial_user_input !== ''  // if user supplied initial binary, load it immediately
+            set_target_app: props.initial_user_input !== '',  // if user supplied initial binary, load it immediately
         }
-
         try{
             this.state.past_binaries = _.uniq(JSON.parse(localStorage.getItem('past_binaries')))
             if(!this.state.user_input){
@@ -32,13 +30,27 @@ class BinaryLoader extends React.Component {
         return(
                 <form style={{marginBottom: 1, flex: '2 0 0'}}>
                   <div className="input-group input-group-sm">
-                    <span className="input-group-btn">
+
+
+                    <div className="dropdown input-group-btn">
+                      <button
+                        className="btn btn-primary dropdown-toggle"
+                        type="button" data-toggle="dropdown">
+                        <span className="caret"></span>
+                      </button>
+                      <ul className="dropdown-menu">
+                        <li><a className='pointer' onClick={Actions.show_upgrade_modal}>connect to gdb server</a></li>
+                        <li><a className='pointer' onClick={Actions.show_upgrade_modal}>attach to process</a></li>
+                      </ul>
+
                       <button
                         type="button"
-                        title="Loads the binary and any arguments present in the input to the right"
+                        title="Loads the binary and any arguments present in the input to the right. Backslashes are treated as escape characters. Windows users can either use two backslashes in paths, or forward slashes."
                         onClick={this.click_set_target_app.bind(this)}
                         className="btn btn-primary">Load Binary</button>
-                    </span>
+                    </div>
+
+
                     <input id="binary"
                         type="text"
                         placeholder="/path/to/target/executable -and -flags"
@@ -96,13 +108,14 @@ class BinaryLoader extends React.Component {
             binary = list_of_params[0]
             args = list_of_params.slice(1, len)
         }
-        return {binary: binary, args: args}
+        let args_in_quotes = args.map(a => '"' + a + '"')
+        return {binary: binary, args: args_in_quotes.join(' ')}
     }
     set_target_app(){
         let user_input = _.trim(this.state.user_input)
 
         if (_.trim(user_input) === ''){
-            store.set('status', {text: 'enter a binary path and arguments', error: true})
+            Actions.add_console_entries('enter a binary path and arguments', constants.console_entry_type.GDBGUI_OUTPUT)
             return
         }
 

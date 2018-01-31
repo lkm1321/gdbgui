@@ -2,8 +2,6 @@
 #include <iostream>
 #include <unistd.h> 
 
-#define PI 3.14159265
-
 int main ()
 {
   double angle = 0, result = 0;
