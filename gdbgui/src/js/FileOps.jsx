@@ -175,7 +175,7 @@ const FileOps = {
     },
     assembly_is_cached: function(fullname){
         let source_file_obj = FileOps.get_source_file_obj_from_cache(fullname)
-        return source_file_obj && source_file_obj.assembly && source_file_obj.assembly.length
+        return source_file_obj && source_file_obj.assembly && Object.keys(source_file_obj.assembly).length
     },
     get_source_file_obj_from_cache: function(fullname){
         let cached_files = store.get('cached_source_files')
@@ -260,11 +260,6 @@ const FileOps = {
         if(!_.isString(fullname)){
             console.warn(`trying to fetch filename that is not a string`, fullname)
             FileOps.add_missing_file(fullname)
-        }else if(!fullname.startsWith('/')){
-            // this can happen when an executable doesn't have debug symbols.
-            // don't try to fetch it because it will never exist.
-            FileOps.add_missing_file(fullname)
-            return
         }
 
         if(FileOps.is_file_being_fetched(fullname)){
@@ -302,9 +297,9 @@ const FileOps = {
             },
             error: function(response){
                 if (response.responseJSON && response.responseJSON.message){
-                    store.set('status', {'text': _.escape(response.responseJSON.message), 'error': true})
+                    Actions.add_console_entries(_.escape(response.responseJSON.message), constants.console_entry_type.STD_ERR)
                 }else{
-                    store.set('status', {'text': `${response.statusText} (${response.status} error)`, 'error': true})
+                    Actions.add_console_entries(`${response.statusText} (${response.status} error)`, constants.console_entry_type.STD_ERR)
                 }
                 FileOps.file_no_longer_being_fetched(fullname)
                 FileOps.add_missing_file(fullname)
@@ -357,7 +352,7 @@ const FileOps = {
     },
     get_fetch_disassembly_command: function(fullname, start_line){
         let mi_response_format = FileOps.get_dissasembly_format_num(store.get('gdb_version_array'))
-        if(_.isString(fullname) && fullname.startsWith('/')){
+        if(_.isString(fullname)){
             if(store.get('interpreter') === 'gdb'){
                 return `-data-disassemble -f ${fullname} -l ${start_line} -n 1000 -- ${mi_response_format}`
             }else{
