@@ -142,11 +142,11 @@ def verify_gdb_exists():
 
 
 def dbprint(*args):
-    """print only if app.debug is truthy"""
-
-    CYELLOW2 = '\33[93m'
-    NORMAL = '\033[0m'
-    print(CYELLOW2 + 'DEBUG: ' + ' '.join(args) + NORMAL)
+    
+    if app and app.debug: 
+        CYELLOW2 = '\33[93m'
+        NORMAL = '\033[0m'
+        print(CYELLOW2 + 'DEBUG: ' + ' '.join(args) + NORMAL)
 
 
 
@@ -288,7 +288,7 @@ def read_and_forward_gdb_output():
                 dbprint(traceback.format_exc())
 
             if response:
-                print(response)
+                # print(response)
                 for client_id in _gdb_state['gdb_controllers'].keys():
                     dbprint('emitting message to client id' + client_id)
 
